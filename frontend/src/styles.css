@@ -1074,6 +1074,15 @@ button {
   font-size: 11px;
 }
 
+.checkpoint-table td.table-breakdown {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  white-space: normal;
+  max-width: 340px;
+  line-height: 1.4;
+}
+
 .checkpoint-table tbody tr:hover {
   background: #f8fafc;
 }

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import WeatherMap from './WeatherMap.jsx'
 import AddressAutocomplete from './AddressAutocomplete.jsx'
-import { formatClock, formatDate, formatDuration, riskLabel } from '../lib/format.js'
+import { formatClock, formatDate, formatDuration, formatRiskBreakdown, riskLabel } from '../lib/format.js'
 import { getLiveRouteMetrics } from '../lib/live.js'
 
 export default function MobileMapApp({
@@ -349,9 +349,14 @@ export default function MobileMapApp({
                   </span>
                 </div>
                 <div className="peek-risk-row">
-                  <span className={`risk-pill risk-${selectedRoute.summary.noTravelMiles > 0 ? 'no-travel' : selectedRoute.summary.severeMiles > 0 ? 'severe' : selectedRoute.summary.highMiles > 0 ? 'high' : 'low'}`}>
-                    {riskLabel(selectedRoute.summary.noTravelMiles > 0 ? 'no-travel' : selectedRoute.summary.severeMiles > 0 ? 'severe' : selectedRoute.summary.highMiles > 0 ? 'high' : 'low')}
-                  </span>
+                  {(() => {
+                    const r = selectedRoute.summary.noTravelMiles > 0 ? 'no-travel' : selectedRoute.summary.severeMiles > 0 ? 'severe' : selectedRoute.summary.highMiles > 0 ? 'high' : (selectedRoute.summary.averageRisk != null && selectedRoute.summary.averageRisk >= 0.6) ? 'moderate' : 'low'
+                    return (
+                      <span className={`risk-pill risk-${r}`}>
+                        {riskLabel(r)}
+                      </span>
+                    )
+                  })()}
                   <span className="peek-risk-text">
                     {selectedRoute.summary.severeMiles > 0
                       ? `${selectedRoute.summary.severeMiles.toFixed(0)} severe mi`
@@ -450,6 +455,11 @@ export default function MobileMapApp({
                             <span>
                               Snow: <strong>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in/h` : '—'}</strong>
                             </span>
+                          </div>
+
+                          <div className="timeline-card-breakdown">
+                            <strong>Reason: </strong>
+                            <span>{point.breakdown || formatRiskBreakdown(point, plan?.loadWeightLbs || Number(form.loadWeight))}</span>
                           </div>
                         </div>
                       </div>

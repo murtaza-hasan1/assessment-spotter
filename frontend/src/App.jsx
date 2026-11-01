@@ -5,7 +5,7 @@ import AddressAutocomplete from './components/AddressAutocomplete.jsx'
 import MapLocationPicker from './components/MapLocationPicker.jsx'
 import MobileMapApp from './components/MobileMapApp.jsx'
 import { getHealth, planTrip, reverseGeocodeLocation } from './lib/api.js'
-import { formatClock, formatDate, formatDuration, localDateTimeValue, riskLabel } from './lib/format.js'
+import { formatClock, formatDate, formatDuration, formatRiskBreakdown, localDateTimeValue, riskLabel } from './lib/format.js'
 import { getLiveRouteMetrics, milesBetween } from './lib/live.js'
 
 const initialDeparture = () => localDateTimeValue(new Date(Date.now() + 2 * 3600000))
@@ -413,7 +413,36 @@ function App() {
           </div>
         </div>
         <div className={`checkpoint-panel-body${checkpointsOpen ? ' open' : ''}`}>
-          <div className="checkpoint-table-wrap"><table className="checkpoint-table"><thead><tr><th>LOCATION</th><th>ARRIVAL</th><th>WIND</th><th>RAIN / HR</th><th>SNOW / HR</th><th>RISK</th><th>RISK MILES</th></tr></thead><tbody>{selectedRoute.checkpoints.map((point, index) => <tr key={`${point.offsetMiles}-${index}`}><td><span className="table-mile"><span className="checkpoint-node" />{point.offsetMiles < 1 ? 'Origin' : point.offsetMiles.toFixed(0) + ' mi'}</span></td><td>{formatDate(point.eta)} · {formatClock(point.eta)}</td><td>{point.weather?.windMph != null ? <>{Math.round(point.weather.windMph)} <small>mph</small></> : '—'}</td><td>{point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in` : '—'}</td><td>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in` : '—'}</td><td><RiskBadge risk={point.risk} /></td><td>{point.riskMiles.toFixed(1)} mi</td></tr>)}</tbody></table></div>
+          <div className="checkpoint-table-wrap">
+            <table className="checkpoint-table">
+              <thead>
+                <tr>
+                  <th>LOCATION</th>
+                  <th>ARRIVAL</th>
+                  <th>WIND</th>
+                  <th>RAIN / HR</th>
+                  <th>SNOW / HR</th>
+                  <th>RISK</th>
+                  <th>RISK BREAKDOWN</th>
+                  <th>RISK MILES</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedRoute.checkpoints.map((point, index) => (
+                  <tr key={`${point.offsetMiles}-${index}`}>
+                    <td><span className="table-mile"><span className="checkpoint-node" />{point.offsetMiles < 1 ? 'Origin' : point.offsetMiles.toFixed(0) + ' mi'}</span></td>
+                    <td>{formatDate(point.eta)} · {formatClock(point.eta)}</td>
+                    <td>{point.weather?.windMph != null ? <>{Math.round(point.weather.windMph)} <small>mph</small></> : '—'}</td>
+                    <td>{point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in` : '—'}</td>
+                    <td>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in` : '—'}</td>
+                    <td><RiskBadge risk={point.risk} /></td>
+                    <td className="table-breakdown">{point.breakdown || formatRiskBreakdown(point, plan?.loadWeightLbs || form.loadWeight)}</td>
+                    <td>{point.riskMiles.toFixed(1)} mi</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>}
     </>}
@@ -478,7 +507,7 @@ function RouteCard({ route, number, liveLocation, recommended, selected, onClick
     </div>
 
     <div className="route-risk-strip">
-      <RiskBadge risk={summary.noTravelMiles > 0 ? 'no-travel' : summary.severeMiles > 0 ? 'severe' : summary.highMiles > 0 ? 'high' : 'low'} />
+      <RiskBadge risk={summary.noTravelMiles > 0 ? 'no-travel' : summary.severeMiles > 0 ? 'severe' : summary.highMiles > 0 ? 'high' : (summary.averageRisk != null && summary.averageRisk >= 0.6) ? 'moderate' : 'low'} />
       <span>{summary.severeMiles.toFixed(0)} severe mi</span>
       <span className="risk-separator">·</span>
       <span>{summary.highMiles.toFixed(0)} high mi</span>

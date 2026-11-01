@@ -1392,6 +1392,20 @@
   font-weight: 650;
 }
 
+.timeline-card-breakdown {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--border-light);
+  font-size: 11px;
+  color: var(--ink-secondary);
+  line-height: 1.35;
+}
+
+.timeline-card-breakdown strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 
 /* ========================================================
    MOBILE SEARCH PILL (Collapsed State)

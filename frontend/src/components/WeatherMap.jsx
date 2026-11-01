@@ -3,6 +3,7 @@ import L from 'leaflet'
 import 'leaflet.heat'
 import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import { getLiveRouteMetrics } from '../lib/live.js'
+import { formatRiskBreakdown } from '../lib/format.js'
 
 const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 
@@ -169,21 +170,6 @@ export default function WeatherMap({ routes = [], origin, destination, liveLocat
               />
             )}
             {forecastAvailable && <HeatLayer samples={samples} hourIndex={hourIndex} loadWeightLbs={loadWeightLbs} />}
-            {forecastAvailable && samples.map((sample, index) => {
-              const risk = sampleRisk(sample, hourIndex, loadWeightLbs)
-              const wind = sample.windMph?.[hourIndex]
-              const rain = sample.rainMmHr?.[hourIndex]
-              const snow = sample.snowCmHr?.[hourIndex]
-              return (
-                <CircleMarker key={`weather-${selected.id}-${index}`} center={[sample.lat, sample.lon]} radius={4.5} pathOptions={{ color: '#fff', weight: 1.5, fillColor: riskColors[risk], fillOpacity: 1 }}>
-                  <Tooltip direction="top">
-                    <strong>{selected.label} · weather sample</strong><br />
-                    {risk.replace('-', ' ')} risk<br />
-                    Wind: {wind == null ? '—' : `${Math.round(wind)} mph`} · Rain: {rain == null ? '—' : `${(rain / 25.4).toFixed(2)} in/hr`} · Snow: {snow == null ? '—' : `${(snow / 2.54).toFixed(2)} in/hr`}
-                  </Tooltip>
-                </CircleMarker>
-              )
-            })}
           </>
         )}
 
@@ -221,6 +207,9 @@ export default function WeatherMap({ routes = [], origin, destination, liveLocat
                   <div>Wind: <strong>{point.weather?.windMph != null ? `${Math.round(point.weather.windMph)} mph` : '—'}</strong></div>
                   <div>Rain: <strong>{point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in/hr` : '—'}</strong></div>
                   <div>Snow: <strong>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in/hr` : '—'}</strong></div>
+                  <div style={{ marginTop: '5px', paddingTop: '5px', borderTop: '1px dashed #e1e4e8', fontSize: '11px', color: '#4b5563' }}>
+                    <strong>Breakdown: </strong>{point.breakdown || formatRiskBreakdown(point, loadWeightLbs)}
+                  </div>
                 </div>
               </Popup>
               <Tooltip direction="top">

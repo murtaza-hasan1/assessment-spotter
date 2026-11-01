@@ -656,37 +656,74 @@ def _combined_rain_series(hourly):
     ]
 
 
-def classify_weather(weather, load_lbs):
+def classify_weather_with_breakdown(weather, load_lbs):
     if weather is None or any(weather.get(key) is None for key in ("windMph", "rainInHr", "snowInHr")):
-        return "unavailable"
+        return "unavailable", "Weather forecast unavailable"
     wind, rain, snow = weather["windMph"], weather["rainInHr"], weather["snowInHr"]
-    ranks = {"low": 0, "moderate": 1, "high": 2, "severe": 3, "no-travel": 4}
-    risks = ["low"]
+    
+    candidates = []
+
+    # 1. Wind & Load evaluation
     if wind >= 55:
-        risks.append("no-travel")
+        candidates.append((4, "no-travel", f"NO TRAVEL: Wind {wind:.0f} mph ≥ 55 mph (all loads)"))
     elif wind >= 45:
-        risks.append("no-travel" if load_lbs > 30000 else "severe")
+        if load_lbs > 30000:
+            candidates.append((4, "no-travel", f"NO TRAVEL: Wind {wind:.0f} mph + Load {load_lbs:,.0f} lb (>30,000 lb rule)"))
+        else:
+            candidates.append((3, "severe", f"Severe wind {wind:.0f} mph (45–54 mph)"))
     elif wind >= 35:
-        risks.append("severe" if load_lbs > 40000 else "high")
+        if load_lbs > 40000:
+            candidates.append((3, "severe", f"Severe risk: Wind {wind:.0f} mph + Load {load_lbs:,.0f} lb (>40,000 lb rule)"))
+        else:
+            candidates.append((2, "high", f"High wind {wind:.0f} mph (35–44 mph)"))
     elif wind >= 25:
-        risks.append("moderate")
+        candidates.append((1, "moderate", f"Moderate wind {wind:.0f} mph (25–34 mph)"))
+    else:
+        candidates.append((0, "low", f"Safe wind {wind:.0f} mph (<25 mph)"))
+
+    # 2. Rain evaluation
     if rain > 1.0:
-        risks.append("no-travel")
+        candidates.append((4, "no-travel", f"NO TRAVEL: Rain {rain:.2f} in/hr > 1.00 in/hr"))
     elif rain >= 0.5:
-        risks.append("severe")
+        candidates.append((3, "severe", f"Severe rain {rain:.2f} in/hr (0.50–1.00 in/hr)"))
     elif rain >= 0.25:
-        risks.append("high")
+        candidates.append((2, "high", f"High rain {rain:.2f} in/hr (0.25–0.50 in/hr)"))
     elif rain >= 0.10:
-        risks.append("moderate")
+        candidates.append((1, "moderate", f"Moderate rain {rain:.2f} in/hr (0.10–0.25 in/hr)"))
+    elif rain > 0:
+        candidates.append((0, "low", f"Light rain {rain:.2f} in/hr (<0.10 in/hr)"))
+
+    # 3. Snow evaluation
     if snow > 3.0:
-        risks.append("no-travel")
+        candidates.append((4, "no-travel", f"NO TRAVEL: Snow {snow:.2f} in/hr > 3.0 in/hr"))
     elif snow >= 2.0:
-        risks.append("severe")
+        candidates.append((3, "severe", f"Severe snow {snow:.2f} in/hr (2.0–3.0 in/hr)"))
     elif snow >= 1.0:
-        risks.append("high")
+        candidates.append((2, "high", f"High snow {snow:.2f} in/hr (1.0–2.0 in/hr)"))
     elif snow >= 0.5:
-        risks.append("moderate")
-    return max(risks, key=ranks.get)
+        candidates.append((1, "moderate", f"Moderate snow {snow:.2f} in/hr (0.5–1.0 in/hr)"))
+    elif snow > 0:
+        candidates.append((0, "low", f"Light flurries {snow:.2f} in/hr (<0.5 in/hr)"))
+
+    top_candidate = max(candidates, key=lambda x: x[0])
+    top_rank, top_risk, top_reason = top_candidate
+
+    if top_rank == 0:
+        breakdown = f"Normal weather · Wind {wind:.0f} mph · Safe for {load_lbs:,.0f} lb load"
+    else:
+        # Collect all reasons that triggered this top risk
+        primary_reasons = [c[2] for c in candidates if c[0] == top_rank]
+        breakdown = " · ".join(primary_reasons)
+        secondary_reasons = [c[2] for c in candidates if 0 < c[0] < top_rank]
+        if secondary_reasons:
+            breakdown += f" (also {', '.join(secondary_reasons)})"
+
+    return top_risk, breakdown
+
+
+def classify_weather(weather, load_lbs):
+    risk, _ = classify_weather_with_breakdown(weather, load_lbs)
+    return risk
 
 
 def _risk_score(risk):
@@ -703,8 +740,8 @@ def assess_route(route, route_number, spacing, load_lbs, departure):
     for checkpoint, forecast in zip(checkpoints, checkpoint_forecasts):
         arrival = departure + timedelta(seconds=checkpoint["travelSeconds"])
         current = _at_time(forecast, arrival)
-        risk = classify_weather(current, load_lbs)
-        scored.append({**checkpoint, "eta": arrival.isoformat(), "weather": current, "risk": risk, "riskMiles": 0.0})
+        risk, breakdown = classify_weather_with_breakdown(current, load_lbs)
+        scored.append({**checkpoint, "eta": arrival.isoformat(), "weather": current, "risk": risk, "breakdown": breakdown, "riskMiles": 0.0})
     # Midpoint boundaries assign every route mile once; retain precision for scoring.
     for index, checkpoint in enumerate(scored):
         left = 0 if index == 0 else (scored[index - 1]["offsetMiles"] + checkpoint["offsetMiles"]) / 2
