@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowLeftRight, ArrowRight, CalendarDays, Check, Clock3, CloudDrizzle, CloudSun, Compass, Gauge, MapPin, Navigation, ShieldCheck, SlidersHorizontal, Truck, Wind } from 'lucide-react'
+import { Activity, ArrowLeftRight, ArrowRight, CalendarDays, Check, ChevronDown, ChevronUp, Clock3, CloudDrizzle, CloudSun, Compass, Gauge, MapPin, Navigation, ShieldCheck, SlidersHorizontal, Truck, Wind } from 'lucide-react'
 import WeatherMap from './components/WeatherMap.jsx'
 import AddressAutocomplete from './components/AddressAutocomplete.jsx'
 import MapLocationPicker from './components/MapLocationPicker.jsx'
+import MobileMapApp from './components/MobileMapApp.jsx'
 import { getHealth, planTrip, reverseGeocodeLocation } from './lib/api.js'
 import { formatClock, formatDate, formatDuration, localDateTimeValue, riskLabel } from './lib/format.js'
 import { getLiveRouteMetrics, milesBetween } from './lib/live.js'
@@ -27,7 +28,15 @@ function App() {
   const rerouteInFlight = useRef(false)
   const lastRerouteAt = useRef(0)
   const [apiStatus, setApiStatus] = useState('checking')
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768)
+  const [checkpointsOpen, setCheckpointsOpen] = useState(false)
   const selectedRoute = plan?.routes.find((route) => route.id === selectedRouteId) || plan?.routes[0]
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => { getHealth().then((health) => setApiStatus(health.routing_configured ? 'ready' : 'missing-key')).catch(() => setApiStatus('offline')) }, [])
 
@@ -202,27 +211,123 @@ function App() {
     }
   }
 
-  return <main className="app-shell">
+  if (isMobile) {
+    return (
+      <div className="mobile-app-wrapper">
+        <MobileMapApp
+          form={form}
+          setForm={setForm}
+          plan={plan}
+          selectedRoute={selectedRoute}
+          selectedRouteId={selectedRouteId}
+          setSelectedRouteId={setSelectedRouteId}
+          sliderHour={sliderHour}
+          setSliderHour={setSliderHour}
+          sliderLabel={sliderLabel}
+          loading={loading}
+          error={error}
+          locationError={locationError}
+          locatingOrigin={locatingOrigin}
+          useCurrentLocation={useCurrentLocation}
+          onPickFromMap={(field) => setMapPicker({ field, initialPlace: field === 'origin' ? form.origin : form.destination })}
+          onSubmit={handleSubmit}
+          livePosition={livePosition}
+          liveError={liveError}
+          isRerouting={isRerouting}
+          updateFormField={update}
+        />
+        {mapPicker && (
+          <MapLocationPicker
+            key={mapPicker.field}
+            field={mapPicker.field}
+            initialPlace={mapPicker.initialPlace}
+            nearbyPlace={mapPicker.field === 'destination' ? form.origin : form.destination}
+            onClose={() => setMapPicker(null)}
+            onChoose={(place) => {
+              const queryField = mapPicker.field === 'origin' ? 'originQuery' : 'destinationQuery'
+              setForm((old) => ({ ...old, [queryField]: place.label, [mapPicker.field]: place }))
+              setLocationError('')
+              setError('')
+              setMapPicker(null)
+            }}
+          />
+        )}
+      </div>
+    )
+  }
+
+  return <>
     <header className="topbar">
       <a className="brand" href="#top" aria-label="StormHaul home"><span className="brand-mark"><CloudSun size={20} strokeWidth={2.2} /></span><span>storm<span className="brand-light">haul</span></span></a>
       <div className="topbar-center"><span className="live-dot" /> WEATHER-AWARE ROUTING <span className="topbar-divider">/</span> TRUCK SAFETY</div>
       <div className="topbar-right"><span className="status-icon"><ShieldCheck size={15} /></span><span>Route intelligence</span><span className="avatar">SH</span></div>
     </header>
-
-    <section className="intro" id="top">
-      <div className="intro-copy"><div className="eyebrow"><span className="eyebrow-line" /> PLAN WITH THE CONDITIONS IN MIND</div><h1>Every mile, <em>in view.</em></h1><p>Compare truck routes against weather at your estimated arrival time. Find the safer way to get there.</p></div>
-      <div className="intro-stamp"><span className="stamp-icon"><Navigation size={18} /></span><div><strong>Built for the long haul</strong><small>Route · Forecast · Decide</small></div></div>
-    </section>
+    <main className="app-shell">
 
     <section className="planner-card">
       <form onSubmit={handleSubmit}>
         <div className="form-heading"><div><span className="section-kicker">TRIP DETAILS</span><h2>Where are you headed?</h2></div><span className="units-note">All distances in miles · Weight in lb</span></div>
         <div className="input-grid">
-          <AddressAutocomplete className="origin-field" label="ORIGIN" value={form.origin?.label || form.originQuery} selectedPlace={form.origin} placeholder="Warehouse, yard, street, city, or postal code" onValueChange={(value) => { setLocationError(''); setForm((old) => ({ ...old, originQuery: value, origin: null })) }} onSelect={(place) => { setLocationError(''); setForm((old) => ({ ...old, originQuery: place.label, origin: place })) }} onUseCurrentLocation={useCurrentLocation} onPickFromMap={() => setMapPicker({ field: 'origin', initialPlace: form.origin })} locating={locatingOrigin} />
-          <div className="swap-wrap"><button type="button" aria-label="Swap origin and destination" className="swap-button" onClick={() => setForm((old) => ({ ...old, originQuery: old.destinationQuery, destinationQuery: old.originQuery, origin: old.destination, destination: old.origin }))}><ArrowLeftRight size={16} /></button></div>
-          <AddressAutocomplete className="destination-field" label="DESTINATION" value={form.destination?.label || form.destinationQuery} selectedPlace={form.destination} placeholder="Dock, street, city, or postal code" biasPlace={form.origin} onValueChange={(value) => setForm((old) => ({ ...old, destinationQuery: value, destination: null }))} onSelect={(place) => setForm((old) => ({ ...old, destinationQuery: place.label, destination: place }))} onPickFromMap={() => setMapPicker({ field: 'destination', initialPlace: form.destination })} />
-          <label className="field departure-field"><span>DEPARTURE</span><div className="input-icon"><CalendarDays size={16} /><input type="datetime-local" required value={form.departure} onChange={(e) => update('departure', e.target.value)} /></div></label>
-          <label className="field weight-field"><span>LOAD WEIGHT</span><div className="input-icon"><Truck size={17} /><input type="number" required min="0" max="200000" step="100" value={form.loadWeight} onChange={(e) => update('loadWeight', e.target.value)} /><b className="unit-suffix">lb</b></div></label>
+          <AddressAutocomplete
+            className="origin-field"
+            label="ORIGIN"
+            value={form.origin?.label || form.originQuery}
+            selectedPlace={form.origin}
+            placeholder="Warehouse, yard, street, city, or postal code"
+            onValueChange={(value) => { setLocationError(''); setForm((old) => ({ ...old, originQuery: value, origin: null })) }}
+            onSelect={(place) => { setLocationError(''); setForm((old) => ({ ...old, originQuery: place.label, origin: place })) }}
+            onUseCurrentLocation={useCurrentLocation}
+            onPickFromMap={() => setMapPicker({ field: 'origin', initialPlace: form.origin })}
+            locating={locatingOrigin}
+          />
+
+          <AddressAutocomplete
+            className="destination-field"
+            label="DESTINATION"
+            value={form.destination?.label || form.destinationQuery}
+            selectedPlace={form.destination}
+            placeholder="Dock, street, city, or postal code"
+            biasPlace={form.origin}
+            onValueChange={(value) => setForm((old) => ({ ...old, destinationQuery: value, destination: null }))}
+            onSelect={(place) => setForm((old) => ({ ...old, destinationQuery: place.label, destination: place }))}
+            onPickFromMap={() => setMapPicker({ field: 'destination', initialPlace: form.destination })}
+          />
+
+          <div className="field departure-field">
+            <div className="field-heading">
+              <label className="field-label" htmlFor="field-departure">DEPARTURE</label>
+            </div>
+            <div className="input-icon">
+              <CalendarDays size={16} />
+              <input
+                id="field-departure"
+                type="datetime-local"
+                required
+                value={form.departure}
+                onChange={(e) => update('departure', e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field weight-field">
+            <div className="field-heading">
+              <label className="field-label" htmlFor="field-weight">LOAD WEIGHT</label>
+            </div>
+            <div className="input-icon">
+              <Truck size={17} />
+              <input
+                id="field-weight"
+                type="number"
+                required
+                min="0"
+                max="200000"
+                step="100"
+                value={form.loadWeight}
+                onChange={(e) => update('loadWeight', e.target.value)}
+              />
+              <b className="unit-suffix">lb</b>
+            </div>
+          </div>
         </div>
         <div className="routing-note">Load weight is used for weather-risk rules. Road restrictions use TomTom's truck profile; this form does not collect vehicle dimensions or gross weight.</div>
         <div className="form-bottom"><div className="spacing-control"><SlidersHorizontal size={15} /><span>CHECKPOINT SPACING</span><div className="segmented">{[10, 25, 50].map((miles) => <button type="button" className={Number(form.spacingMiles) === miles ? 'segment active' : 'segment'} key={miles} onClick={() => update('spacingMiles', miles)}>{miles} mi</button>)}</div></div>
@@ -243,7 +348,32 @@ function App() {
       setMapPicker(null)
     }} />}
 
-    {plan ? <>
+    {!plan && (
+      <section className="initial-map-section">
+        <div className="initial-map-header">
+          <div>
+            <span className="section-kicker">LIVE ROUTE MAP</span>
+            <h3>Explore corridor & weather conditions</h3>
+          </div>
+          <span className="initial-map-tip">
+            {form.origin || form.destination
+              ? 'Pins placed on map · Click "Find safer routes" to evaluate weather'
+              : 'Interactive Map · Choose origin & destination to begin'}
+          </span>
+        </div>
+        <div className="initial-map-container">
+          <WeatherMap
+            routes={[]}
+            origin={form.origin}
+            destination={form.destination}
+            liveLocation={livePosition}
+            isInitial={true}
+          />
+        </div>
+      </section>
+    )}
+
+    {plan && <>
       <div className="results-head"><div><div className="section-kicker">ROUTE ANALYSIS <span className="head-dot" /></div><h2>{plan.origin.label} <ArrowRight size={19} /> {plan.destination.label}</h2></div><div className="results-meta"><span><CalendarDays size={15} /> {formatDate(plan.departure)}</span><span><Clock3 size={15} /> {formatClock(plan.departure)}</span><span><Truck size={15} /> {Number(plan.loadWeightLbs).toLocaleString()} lb load</span></div></div>
       {plan.routeNotice && <div className="notice-banner"><span>i</span>{plan.routeNotice}</div>}
       {plan.recommendationNotice && <div className="notice-banner"><span>i</span>{plan.recommendationNotice}</div>}
@@ -253,8 +383,8 @@ function App() {
         <div className="map-panel">
           <div className="panel-header"><div><span className="section-kicker">WEATHER CORRIDOR</span><h3>Conditions along the way</h3></div><div className="map-live"><span className="live-dot" /> {plan.origin.isCurrentLocation ? 'LIVE TRIP' : 'FORECAST LAYER'}</div></div>
           <div className="map-controls"><div className="forecast-title"><CloudDrizzle size={16} /><span>Forecast time</span><strong>{sliderLabel}</strong></div><div className="slider-row"><span>0h</span><input aria-label="Forecast hour" type="range" min="0" max="48" value={sliderHour} onChange={(e) => setSliderHour(Number(e.target.value))} /><span>48h</span></div><div className="slider-ticks"><span>Departure</span><span>+12 hours</span><span>+24 hours</span><span>+36 hours</span><span>+48 hours</span></div></div>
-          <WeatherMap routes={plan.routes} origin={plan.origin} destination={plan.destination} liveLocation={plan.origin.isCurrentLocation ? livePosition : null} selectedRouteId={selectedRoute?.id} onSelectRoute={setSelectedRouteId} sliderHour={sliderHour} loadWeightLbs={plan.loadWeightLbs} />
-          <div className="map-footer"><span><i className="heat-icon" /> Forecast risk along the selected route at the slider time; colors combine wind, rain, and snow</span><span>{plan.origin.isCurrentLocation ? 'Dashed line connects your exact GPS start to the truck-road snap point. ' : ''}Click weather points for values or the start/end markers for road-snapped points · Routing: <a href="https://www.tomtom.com/" target="_blank" rel="noreferrer">TomTom</a> · Weather: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo.com</a> · Heat samples every 15 miles</span></div>
+          <WeatherMap routes={plan.routes} origin={plan.origin} destination={plan.destination} liveLocation={plan.origin.isCurrentLocation ? livePosition : null} selectedRouteId={selectedRoute?.id} onSelectRoute={setSelectedRouteId} sliderHour={sliderHour} loadWeightLbs={plan.loadWeightLbs} isInitial={false} />
+          <div className="map-footer"><span><i className="heat-icon" /> Forecast risk along the selected route at the slider time; colors combine wind, rain, and snow</span><span>Click weather points for values or inspect checkpoints below · Routing: <a href="https://www.tomtom.com/" target="_blank" rel="noreferrer">TomTom</a> · Weather: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo.com</a> · Heat samples every 15 miles</span></div>
         </div>
         <aside className="route-column">
           <div className="route-column-head"><div><span className="section-kicker">YOUR OPTIONS</span><h3>Choose a route</h3></div><span className="option-count">{plan.routes.length} FOUND</span></div>
@@ -264,22 +394,98 @@ function App() {
       </section>
 
       {selectedRoute && <section className="checkpoint-panel">
-        <div className="checkpoint-head"><div><span className="section-kicker">CHECKPOINT DETAIL</span><h3>{selectedRoute.label}<span className="checkpoint-subtitle"> · Every {plan.spacingMiles} miles</span></h3></div><div className="checkpoint-count"><Activity size={15} /> {selectedRoute.checkpoints.length} points</div></div>
-        <div className="checkpoint-table-wrap"><table className="checkpoint-table"><thead><tr><th>LOCATION</th><th>ARRIVAL</th><th>WIND</th><th>RAIN / HR</th><th>SNOW / HR</th><th>RISK</th><th>RISK MILES</th></tr></thead><tbody>{selectedRoute.checkpoints.map((point, index) => <tr key={`${point.offsetMiles}-${index}`}><td><span className="table-mile"><span className="checkpoint-node" />{point.offsetMiles < 1 ? 'Origin' : point.offsetMiles.toFixed(0) + ' mi'}</span></td><td>{formatDate(point.eta)} · {formatClock(point.eta)}</td><td>{point.weather?.windMph != null ? <>{Math.round(point.weather.windMph)} <small>mph</small></> : '—'}</td><td>{point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in` : '—'}</td><td>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in` : '—'}</td><td><RiskBadge risk={point.risk} /></td><td>{point.riskMiles.toFixed(1)} mi</td></tr>)}</tbody></table></div>
+        <div className="checkpoint-head">
+          <div>
+            <span className="section-kicker">CHECKPOINT DETAIL</span>
+            <h3>{selectedRoute.label}<span className="checkpoint-subtitle"> · Every {plan.spacingMiles} miles</span></h3>
+          </div>
+          <div className="checkpoint-head-actions">
+            <div className="checkpoint-count"><Activity size={14} /> {selectedRoute.checkpoints.length} points</div>
+            <button
+              type="button"
+              className="checkpoint-toggle-pill"
+              onClick={() => setCheckpointsOpen((o) => !o)}
+              aria-expanded={checkpointsOpen}
+            >
+              <span>{checkpointsOpen ? 'Hide details' : 'View details'}</span>
+              {checkpointsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+          </div>
+        </div>
+        <div className={`checkpoint-panel-body${checkpointsOpen ? ' open' : ''}`}>
+          <div className="checkpoint-table-wrap"><table className="checkpoint-table"><thead><tr><th>LOCATION</th><th>ARRIVAL</th><th>WIND</th><th>RAIN / HR</th><th>SNOW / HR</th><th>RISK</th><th>RISK MILES</th></tr></thead><tbody>{selectedRoute.checkpoints.map((point, index) => <tr key={`${point.offsetMiles}-${index}`}><td><span className="table-mile"><span className="checkpoint-node" />{point.offsetMiles < 1 ? 'Origin' : point.offsetMiles.toFixed(0) + ' mi'}</span></td><td>{formatDate(point.eta)} · {formatClock(point.eta)}</td><td>{point.weather?.windMph != null ? <>{Math.round(point.weather.windMph)} <small>mph</small></> : '—'}</td><td>{point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in` : '—'}</td><td>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in` : '—'}</td><td><RiskBadge risk={point.risk} /></td><td>{point.riskMiles.toFixed(1)} mi</td></tr>)}</tbody></table></div>
+        </div>
       </section>}
-    </> : <section className="empty-state"><div className="empty-illustration"><div className="sun-disc" /><div className="road-line" /><div className="empty-pin"><MapPin size={22} /></div><div className="empty-cloud"><CloudSun size={24} /></div></div><span className="section-kicker">A CLEARER PICTURE AHEAD</span><h2>Start with your trip details.</h2><p>Your route options, weather checkpoints, and risk summary will appear here.</p><div className="empty-chips"><span><Compass size={14} /> Truck-aware routes</span><span><Wind size={14} /> Arrival-time forecasts</span><span><Gauge size={14} /> Risk by mile</span></div></section>}
+    </>}
 
-    <footer className="footer"><div className="footer-brand"><span className="brand-mark small"><CloudSun size={14} /></span> stormhaul</div><span>Forecasts are estimates. Always follow local road closures and official weather advisories.</span><span className="footer-right">© StormHaul <span className="footer-sep">·</span> Built for safer miles</span></footer>
+    <footer className="footer">
+      <div className="footer-brand">
+        <span className="brand-mark small"><CloudSun size={13} strokeWidth={2.4} /></span>
+        <span className="footer-brand-text">storm<span className="brand-accent">haul</span></span>
+      </div>
+      <span className="footer-note">Forecasts are estimates. Always follow local road closures and official weather advisories.</span>
+      <span className="footer-right">
+        <span className="footer-brand-title">© StormHaul</span>
+        <span className="footer-sep">·</span>
+        <span>Built for <strong className="footer-safer-miles">safer miles</strong></span>
+      </span>
+    </footer>
   </main>
+  </>
 }
 
 function RouteCard({ route, number, liveLocation, recommended, selected, onClick }) {
   const summary = route.summary
   const liveMetrics = liveLocation ? getLiveRouteMetrics(route, liveLocation) : null
-  return <button className={`route-card ${selected ? 'selected' : ''}`} onClick={onClick}>
-    <div className="route-card-top"><span className={`route-number n${number}`}>0{number}</span><div className="route-name"><strong>{route.label}</strong><small>{recommended ? 'Recommended' : route.source?.endsWith('candidate') ? 'Preference-based candidate' : `Option ${number}`}</small></div>{recommended && <span className="recommended-tag"><Check size={12} /> BEST</span>}</div>
-    <div className="route-stats"><div><strong>{formatDuration(liveMetrics?.remainingSeconds ?? route.durationSeconds)}</strong><small>{liveMetrics ? 'TIME LEFT' : 'TRAVEL TIME'}</small></div><div><strong>{(liveMetrics?.remainingMiles ?? route.distanceMiles).toLocaleString(undefined, { maximumFractionDigits: 1 })} <small>mi</small></strong><small>{liveMetrics ? 'LEFT' : 'DISTANCE'}</small></div><div><strong>{formatClock(liveMetrics?.eta || route.eta)}</strong><small>{liveMetrics ? 'LIVE ETA' : 'ARRIVAL'}</small></div></div>
-    <div className="route-risk-strip"><RiskBadge risk={summary.noTravelMiles > 0 ? 'no-travel' : summary.severeMiles > 0 ? 'severe' : summary.highMiles > 0 ? 'high' : 'low'} /><span>{summary.severeMiles.toFixed(0)} severe mi</span><span className="risk-separator">·</span><span>{summary.highMiles.toFixed(0)} high mi</span><span className="risk-separator">·</span><span>avg {summary.averageRisk == null ? '—' : `${summary.averageRisk.toFixed(2)}/4`}</span>{summary.noTravelMiles > 0 && <><span className="risk-separator">·</span><span>{summary.noTravelMiles.toFixed(0)} no travel</span></>}</div>
+
+  const totalDist = Number(route.distanceMiles) || 1
+  const severePct = Math.min(100, (((summary.severeMiles || 0) / totalDist) * 100))
+  const highPct = Math.min(100 - severePct, (((summary.highMiles || 0) / totalDist) * 100))
+  const noTravelPct = Math.min(100 - severePct - highPct, (((summary.noTravelMiles || 0) / totalDist) * 100))
+  const clearPct = Math.max(0, 100 - severePct - highPct - noTravelPct)
+
+  return <button type="button" className={`route-card ${selected ? 'selected' : ''}`} onClick={onClick}>
+    <div className="route-card-top">
+      <span className={`route-number n${number}`}>0{number}</span>
+      <div className="route-name">
+        <strong>{route.label}</strong>
+        <small>{recommended ? 'Recommended route' : route.source?.endsWith('candidate') ? 'Alternative candidate' : `Option ${number}`}</small>
+      </div>
+      {recommended && <span className="recommended-tag"><Check size={12} /> BEST</span>}
+    </div>
+
+    <div className="route-stats">
+      <div>
+        <strong>{formatDuration(liveMetrics?.remainingSeconds ?? route.durationSeconds)}</strong>
+        <small>{liveMetrics ? 'TIME LEFT' : 'TRAVEL TIME'}</small>
+      </div>
+      <div>
+        <strong>{(liveMetrics?.remainingMiles ?? route.distanceMiles).toLocaleString(undefined, { maximumFractionDigits: 1 })} <small>mi</small></strong>
+        <small>{liveMetrics ? 'REMAINING' : 'DISTANCE'}</small>
+      </div>
+      <div>
+        <strong>{formatClock(liveMetrics?.eta || route.eta)}</strong>
+        <small>{liveMetrics ? 'LIVE ETA' : 'ARRIVAL'}</small>
+      </div>
+    </div>
+
+    {/* Visual weather corridor distribution bar */}
+    <div className="route-distribution-bar" title="Route weather risk distribution">
+      {noTravelPct > 0 && <span style={{ width: `${noTravelPct}%`, background: '#7c3aed' }} />}
+      {severePct > 0 && <span style={{ width: `${severePct}%`, background: '#dc2626' }} />}
+      {highPct > 0 && <span style={{ width: `${highPct}%`, background: '#ea580c' }} />}
+      {clearPct > 0 && <span style={{ width: `${clearPct}%`, background: '#10b981' }} />}
+    </div>
+
+    <div className="route-risk-strip">
+      <RiskBadge risk={summary.noTravelMiles > 0 ? 'no-travel' : summary.severeMiles > 0 ? 'severe' : summary.highMiles > 0 ? 'high' : 'low'} />
+      <span>{summary.severeMiles.toFixed(0)} severe mi</span>
+      <span className="risk-separator">·</span>
+      <span>{summary.highMiles.toFixed(0)} high mi</span>
+      <span className="risk-separator">·</span>
+      <span>avg {summary.averageRisk == null ? '—' : `${summary.averageRisk.toFixed(2)}/4`}</span>
+      {summary.noTravelMiles > 0 && <><span className="risk-separator">·</span><span className="no-travel-tag">{summary.noTravelMiles.toFixed(0)} no-travel mi</span></>}
+    </div>
   </button>
 }
 

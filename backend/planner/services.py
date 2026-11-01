@@ -384,7 +384,7 @@ def fetch_routes(origin, destination, departure, api_key):
     path = f"{origin['lat']},{origin['lon']}:{destination['lat']},{destination['lon']}"
     endpoint = f"{TOMTOM_BASE}/routing/1/calculateRoute/{path}/json"
 
-    def request(route_type, alternatives):
+    def _request(route_type, alternatives, avoid=None):
         params = {
             "key": api_key,
             "travelMode": "truck",
@@ -396,36 +396,106 @@ def fetch_routes(origin, destination, departure, api_key):
             "computeTravelTimeFor": "all",
             "coordinatePrecision": "full",
         }
+        if avoid:
+            params["avoid"] = avoid
         return _get_json(endpoint, params=params).get("routes") or []
 
-    primary = request("fastest", 2)
-    for index, route in enumerate(primary):
-        route["_routeSource"] = "router alternative" if index else "fastest"
     routes = []
     signatures = set()
-    for index, route in enumerate(primary):
-        signature = _route_signature(route)
-        if signature and signature not in signatures and len(routes) < 3:
-            route["_routeSource"] = "router alternative" if index else "fastest"
-            routes.append(route)
-            signatures.add(signature)
-    # Alternate route preferences produce explicit candidates only when TomTom
-    # returns fewer than three alternatives. Keep the truck and time inputs.
-    for route_type in ("eco", "short"):
+
+    def _try_add(candidates, source):
+        """Add the first geometrically distinct candidate from the list, up to the 3-route cap."""
+        for route in candidates:
+            if len(routes) >= 3:
+                return
+            sig = _route_signature(route)
+            if sig and sig not in signatures:
+                route["_routeSource"] = source
+                routes.append(route)
+                signatures.add(sig)
+
+    # Tier 1: fastest + up to 2 native TomTom alternatives in one call.
+    primary = _request("fastest", 2)
+    for idx, route in enumerate(primary):
+        _try_add([route], "fastest" if idx == 0 else "router alternative")
+
+    # Tiers 2–5: fill any remaining slots with preference-based candidates.
+    # "shortest" corrects the previously broken "short" route-type value.
+    # avoid=motorways and avoid=tollRoads force genuinely different paths.
+    _FILL_STRATEGIES = [
+        ("eco",      None,          "eco candidate"),
+        ("shortest", None,          "short candidate"),
+        ("fastest",  "motorways",   "no-motorway candidate"),
+        ("fastest",  "tollRoads",   "toll-free candidate"),
+    ]
+    for route_type, avoid, source in _FILL_STRATEGIES:
         if len(routes) >= 3:
             break
         try:
-            candidates = request(route_type, 0)
+            _try_add(_request(route_type, 0, avoid=avoid), source)
         except (InputError, ProviderError):
             continue
-        for candidate in candidates:
-            signature = _route_signature(candidate)
-            if signature and signature not in signatures:
-                candidate["_routeSource"] = f"{route_type} candidate"
-                routes.append(candidate)
-                signatures.add(signature)
-                break
-    return routes[:3]
+
+    selected_routes = routes[:3]
+    for route in selected_routes:
+        _connect_route_to_roads(route, origin, destination, api_key)
+
+    return selected_routes
+
+
+def _fetch_local_road_connector(start_coords, end_coords, api_key):
+    """
+    Fetch road-following geometry between two nearby points using local road routing,
+    ensuring the route starts and ends along actual street networks rather than
+    drawing a straight displacement line from the device GPS coordinate.
+    """
+    if haversine(start_coords, end_coords) <= 25:
+        return []
+    try:
+        path = f"{start_coords['lat']},{start_coords['lon']}:{end_coords['lat']},{end_coords['lon']}"
+        endpoint = f"{TOMTOM_BASE}/routing/1/calculateRoute/{path}/json"
+        params = {
+            "key": api_key,
+            "travelMode": "car",  # car mode traverses local streets, alleys, and connectors
+            "traffic": "false",
+            "computeTravelTimeFor": "all",
+        }
+        data = _get_json(endpoint, params=params, timeout=10)
+        conn_routes = data.get("routes") or []
+        if conn_routes:
+            pts = []
+            for leg in conn_routes[0].get("legs") or []:
+                for p in leg.get("points") or []:
+                    if p.get("latitude") is not None and p.get("longitude") is not None:
+                        pts.append({"lat": p["latitude"], "lon": p["longitude"]})
+            return pts
+    except Exception:
+        pass
+    return []
+
+
+def _connect_route_to_roads(route, origin, destination, api_key):
+    """
+    Ensure the route begins and ends along actual road networks right at the origin
+    and destination, eliminating straight-line displacement gaps.
+    """
+    legs = route.get("legs") or []
+    if not legs or not legs[0].get("points"):
+        return
+
+    first_pt = {"lat": legs[0]["points"][0]["latitude"], "lon": legs[0]["points"][0]["longitude"]}
+    if haversine(origin, first_pt) > 25:
+        connector = _fetch_local_road_connector(origin, first_pt, api_key)
+        if connector:
+            connector_tomtom = [{"latitude": p["lat"], "longitude": p["lon"]} for p in connector[:-1]]
+            legs[0]["points"] = connector_tomtom + legs[0]["points"]
+
+    last_pt = {"lat": legs[-1]["points"][-1]["latitude"], "lon": legs[-1]["points"][-1]["longitude"]}
+    if haversine(destination, last_pt) > 25:
+        connector = _fetch_local_road_connector(last_pt, destination, api_key)
+        if connector:
+            connector_tomtom = [{"latitude": p["lat"], "longitude": p["lon"]} for p in connector[1:]]
+            legs[-1]["points"] = legs[-1]["points"] + connector_tomtom
 
 
 def haversine(a, b):
@@ -662,7 +732,14 @@ def assess_route(route, route_number, spacing, load_lbs, departure):
     summary = route.get("summary") or {}
     return {
         "id": f"route-{route_number}",
-        "label": {"fastest": "Fastest route", "router alternative": "Alternative route", "eco candidate": "Eco candidate", "short candidate": "Balanced candidate"}.get(route.get("_routeSource"), f"Route {route_number}"),
+        "label": {
+            "fastest": "Fastest route",
+            "router alternative": "Alternative route",
+            "eco candidate": "Eco candidate",
+            "short candidate": "Shortest route",
+            "no-motorway candidate": "No-motorway route",
+            "toll-free candidate": "Toll-free route",
+        }.get(route.get("_routeSource"), f"Route {route_number}"),
         "source": route.get("_routeSource", "router alternative"),
         "distanceMiles": round(total_m * METERS_TO_MILES, 1),
         "durationSeconds": duration,
@@ -722,7 +799,7 @@ def build_trip_plan(payload, api_key):
         "recommendedRouteId": winner["id"] if winner else None,
         "routeCount": len(planned),
         "routeNotice": (
-            "TomTom returned fewer than three alternatives; additional route preferences are shown as candidates."
+            "Fewer than three native alternatives were returned; preference-based candidates (eco, shortest, no-motorway, toll-free) are included to complete the set."
             if any(route.get("source", "").endswith("candidate") for route in planned)
             else "The routing provider returned fewer than three distinct route options." if len(planned) < 3 else None
         ),
