@@ -187,24 +187,50 @@ export default function WeatherMap({ routes = [], origin, destination, liveLocat
           </>
         )}
 
-        {/* Checkpoint nodes along the route */}
-        {hasRoutes && routes.flatMap((route) => route.checkpoints.map((point, index) => {
-          const active = route.id === selected?.id
+        {/* Checkpoint nodes for the active selected route (matches table details exactly) */}
+        {selected && selected.checkpoints && selected.checkpoints.map((point, index) => {
           return (
             <CircleMarker
-              key={`${route.id}-${index}`}
+              key={`selected-checkpoint-${selected.id}-${point.offsetMiles}-${index}`}
               center={[point.lat, point.lon]}
-              radius={active ? 6 : 3.5}
-              pathOptions={{ color: '#fff', weight: active ? 2 : 1.2, fillColor: riskColors[point.risk], fillOpacity: active ? 1 : 0.78 }}
-              eventHandlers={{ click: () => onSelectRoute?.(route.id) }}
+              radius={6}
+              pathOptions={{
+                color: '#ffffff',
+                weight: 2,
+                fillColor: riskColors[point.risk] || '#9ca3a1',
+                fillOpacity: 1,
+              }}
             >
+              <Popup>
+                <div style={{ minWidth: '170px', fontSize: '12px', lineHeight: '1.45' }}>
+                  <strong style={{ fontSize: '13px', color: '#1c2128' }}>
+                    {point.offsetMiles < 1 ? 'Trip Origin' : `Mile ${point.offsetMiles.toFixed(0)}`}
+                  </strong>
+                  <br />
+                  <span style={{ color: '#57606a' }}>
+                    ETA: {point.eta ? new Date(point.eta).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                  </span>
+                  <hr style={{ margin: '6px 0', border: 0, borderTop: '1px solid #e1e4e8' }} />
+                  <div>
+                    <strong>Risk: </strong>
+                    <span style={{ color: riskColors[point.risk], fontWeight: 700 }}>
+                      {point.risk.toUpperCase()}
+                    </span>
+                    <span style={{ color: '#57606a' }}> ({point.riskMiles.toFixed(1)} mi)</span>
+                  </div>
+                  <div>Wind: <strong>{point.weather?.windMph != null ? `${Math.round(point.weather.windMph)} mph` : '—'}</strong></div>
+                  <div>Rain: <strong>{point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in/hr` : '—'}</strong></div>
+                  <div>Snow: <strong>{point.weather?.snowInHr != null ? `${point.weather.snowInHr.toFixed(2)} in/hr` : '—'}</strong></div>
+                </div>
+              </Popup>
               <Tooltip direction="top">
-                <strong>{route.label} · {point.offsetMiles.toFixed(0)} mi · {point.eta ? new Date(point.eta).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}</strong><br />
-                {point.risk.replace('-', ' ')} risk{point.weather?.windMph != null ? ` · ${Math.round(point.weather.windMph)} mph wind` : ''}
+                <strong>{point.offsetMiles < 1 ? 'Origin' : `${point.offsetMiles.toFixed(0)} mi`} · {point.risk.toUpperCase()}</strong><br />
+                ETA: {point.eta ? new Date(point.eta).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}<br />
+                Wind: {point.weather?.windMph != null ? `${Math.round(point.weather.windMph)} mph` : '—'} · Rain: {point.weather?.rainInHr != null ? `${point.weather.rainInHr.toFixed(2)} in` : '—'}
               </Tooltip>
             </CircleMarker>
           )
-        }))}
+        })}
 
         {/* Origin and Destination markers */}
         {origin && origin.lat != null && origin.lon != null && (
