@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
-import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet'
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { LoaderCircle, MapPin, X } from 'lucide-react'
 import { reverseGeocodeLocation } from '../lib/api.js'
 
 const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 const pinIcon = L.divIcon({ className: 'location-picker-icon', html: '<span></span>', iconSize: [28, 36], iconAnchor: [14, 34] })
+const WORLD_BOUNDS = [[-85, -180], [85, 180]]
+
+function MapConfig() {
+  const map = useMap()
+  useEffect(() => {
+    map.setMaxBounds(WORLD_BOUNDS)
+    map.options.maxBoundsViscosity = 1.0
+    map.setMinZoom(3)
+  }, [map])
+  return null
+}
 
 function MapClickHandler({ onPosition }) {
   useMapEvents({ click(event) { onPosition(event.latlng) } })
@@ -65,10 +76,20 @@ export default function MapLocationPicker({ field, initialPlace, nearbyPlace, on
         <button type="button" className="map-picker-close" aria-label="Close map picker" onClick={onClose}><X size={19} /></button>
       </header>
       <div className="map-picker-map">
-        <MapContainer key={field} center={mapCenter ? [mapCenter.lat, mapCenter.lon] : [20, 0]} zoom={initialPosition ? 15 : mapCenter ? 12 : 2} scrollWheelZoom className="map-canvas">
+        <MapContainer
+          key={field}
+          center={mapCenter ? [mapCenter.lat, mapCenter.lon] : [20, 0]}
+          zoom={initialPosition ? 15 : mapCenter ? 12 : 3}
+          minZoom={3}
+          maxBounds={WORLD_BOUNDS}
+          maxBoundsViscosity={1.0}
+          scrollWheelZoom
+          className="map-canvas"
+        >
           {mapboxToken
-            ? <TileLayer attribution="&copy; <a href='https://www.mapbox.com/about/maps/'>Mapbox</a> &copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`} />
-            : <TileLayer attribution="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />}
+            ? <TileLayer noWrap bounds={WORLD_BOUNDS} attribution="&copy; <a href='https://www.mapbox.com/about/maps/'>Mapbox</a> &copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`} />
+            : <TileLayer noWrap bounds={WORLD_BOUNDS} attribution="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />}
+          <MapConfig />
           <MapClickHandler onPosition={updatePoint} />
           {point && <Marker position={[point.lat, point.lon]} icon={pinIcon} draggable eventHandlers={{ dragend: (event) => updatePoint(event.target.getLatLng()) }} />}
         </MapContainer>

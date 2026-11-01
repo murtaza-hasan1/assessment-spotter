@@ -8,6 +8,7 @@ const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 
 const routeColors = ['#226192', '#EF8557', '#3d7a64']
 const riskColors = { low: '#2e8f6b', moderate: '#d4a23f', high: '#e7863b', severe: '#d5554c', 'no-travel': '#833e5c', unavailable: '#9ca3a1' }
+const WORLD_BOUNDS = [[-85, -180], [85, 180]]
 
 function fitGeometry(map, routes) {
   const coordinates = routes.flatMap((route) => route.geometry || []).map((point) => [point.lat, point.lon])
@@ -42,6 +43,9 @@ function FitInitial({ origin, destination }) {
 function AutoResizeMap({ isInitial }) {
   const map = useMap()
   useEffect(() => {
+    map.setMaxBounds(WORLD_BOUNDS)
+    map.options.maxBoundsViscosity = 1.0
+    map.setMinZoom(3)
     const timer = setTimeout(() => {
       map.invalidateSize()
     }, 200)
@@ -114,10 +118,18 @@ export default function WeatherMap({ routes = [], origin, destination, liveLocat
 
   return (
     <div className={`map-wrap ${isInitial ? 'map-wrap-initial' : 'map-wrap-active'}`}>
-      <MapContainer center={[39.5, -98.35]} zoom={4} scrollWheelZoom className="map-canvas">
+      <MapContainer
+        center={[39.5, -98.35]}
+        zoom={4}
+        minZoom={3}
+        maxBounds={WORLD_BOUNDS}
+        maxBoundsViscosity={1.0}
+        scrollWheelZoom
+        className="map-canvas"
+      >
         {mapboxToken
-          ? <TileLayer attribution="&copy; <a href='https://www.mapbox.com/about/maps/'>Mapbox</a> &copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`} />
-          : <TileLayer attribution="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />}
+          ? <TileLayer noWrap bounds={WORLD_BOUNDS} attribution="&copy; <a href='https://www.mapbox.com/about/maps/'>Mapbox</a> &copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token=${mapboxToken}`} />
+          : <TileLayer noWrap bounds={WORLD_BOUNDS} attribution="&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>" url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />}
         <AutoResizeMap isInitial={isInitial} />
 
         {/* Initial state view: fit placed origin/destination pins if available */}
