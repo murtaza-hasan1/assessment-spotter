@@ -32,7 +32,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
-CORS_ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGIN.split(",") if origin.strip()]
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
+if FRONTEND_ORIGIN == "*" or os.getenv("CORS_ALLOW_ALL", "true").lower() in ("true", "1"):
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in FRONTEND_ORIGIN.split(",") if origin.strip()]
+CORS_ALLOW_CREDENTIALS = True
 TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY", "")
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN", "")
